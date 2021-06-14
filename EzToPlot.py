@@ -76,7 +76,7 @@ class file_parser:
                 self.x_data.append(float(plain_values[self.x_column]))
                 self.y_data.append(float(plain_values[self.y_column]))
                 xerr = 0
-                for err_number, x_err_type in enumerate(self.x_err_types):
+                for err_number, x_err_type in enumerate(self.x_err_types):#TODO: USE GET_ERROR?
                     column_count = 0
                     if(x_err_type == "resolution"):
                         xerr += uncert_lib.resolution_uncert(float(plain_values[self.x_settings_columns[column_count]]),self.x_err_setting[err_number])
@@ -90,7 +90,7 @@ class file_parser:
                         column_count = column_count + 1
                 self.x_err.append(xerr)
                 yerr = 0
-                for err_number, y_err_type in enumerate(self.y_err_types):
+                for err_number, y_err_type in enumerate(self.y_err_types):#TODO: USE GET_ERROR?
                     column_count = 0
                     if(y_err_type == "resolution"):
                         yerr += uncert_lib.resolution_uncert(float(plain_values[self.y_settings_columns[column_count]]),self.y_err_setting[err_number])
@@ -184,9 +184,26 @@ class ez_parser:
     def __init__(self):
         self.file_parsers = {}
 
+    def describe(self):
+        for file in self.file_parsers:
+            output = ""
+            print(file)
+            for i, x in enumerate(self.file_parsers[file].x_data):
+                output += "(" + str(self.file_parsers[file].x_data[i]) + " +/- "
+                output += str(self.file_parsers[file].x_err[i]) + ") - "
+                output += "(" + str(self.file_parsers[file].y_data[i]) + " +/- "
+                output += str(self.file_parsers[file].y_err[i]) + ")\n"
+            print(output)
+
+    def redefine_x(self,filename,filename_redefine,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns=[]):
+        self.file_parsers[filename].redefine_x(filename_redefine,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns)
+    
+    def redefine_y(self,filename,filename_redefine,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns=[]):
+        self.file_parsers[filename].redefine_y(filename_redefine,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns)
+
     def setup_file(self, filename,x_column,y_column,x_settings_columns=[],y_settings_columns=[],x_err_types=[],y_err_types=[],x_err_setting=[],y_err_setting=[]):
         self.file_parsers[filename] = file_parser(filename,x_column,y_column,x_settings_columns,y_settings_columns,x_err_types,y_err_types,x_err_setting,y_err_setting)
-    def err_plot(self, filenames, title="",x_label="",y_label="",legends=[],additional_legend=""):
+    def err_plot(self, filenames, title="",x_label="",y_label="",legends=[],additional_legend="", show=True):
         if not isinstance(filenames, list):
             filenames = [filenames]
 
@@ -214,7 +231,7 @@ class ez_parser:
             plt.xlabel(x_label)
 
         if(len(y_label)>0):
-            plt.ylabel(y_label)
+            plt.ylabel(y_label,rotation='horizontal', ha='right')
 
         if(len(additional_legend)>0):
             plt.plot([], [], ls='none', label=additional_legend)
@@ -223,9 +240,10 @@ class ez_parser:
             plt.legend()
 
         plt.grid(linestyle='dotted')
-        plt.show()
+        if(show):
+            plt.show()
 
-    def fit_plot(self, filenames, models, parameter_counts, colors=[], title="", x_label="", y_label="", legends_err=[], legends_fit=[], additional_legend="", override_start=[]):
+    def fit_plot(self, filenames, models, parameter_counts, colors=[], title="", x_label="", y_label="", legends_err=[], legends_fit=[], additional_legend="", override_start=[], show=True):
         if not isinstance(filenames, list):
             filenames = [filenames]
 
@@ -248,6 +266,13 @@ class ez_parser:
 
         if not isinstance(legends_fit, list):
             legends_fit = [legends_fit]
+
+        if len(override_start)<=0:
+            for count in range(len(filenames)):
+                temp = []
+                for parameters in range(parameter_counts[count]):
+                    temp.append(1)
+                override_start.append(temp)
 
         for parser_number, filename in enumerate(filenames):
             if filename in self.file_parsers:
@@ -277,7 +302,7 @@ class ez_parser:
             plt.xlabel(x_label)
 
         if(len(y_label)>0):
-            plt.ylabel(y_label)
+            plt.ylabel(y_label, rotation='horizontal', ha='right')
 
         if(len(additional_legend)>0):
             plt.plot([], [], ls='none', label=additional_legend)
@@ -286,4 +311,5 @@ class ez_parser:
             plt.legend()
 
         plt.grid(linestyle='dotted')
-        plt.show()
+        if(show):
+            plt.show()
