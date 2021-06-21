@@ -4,6 +4,9 @@ import scipy.odr as odr
 import uncert_lib
 import numpy as np
 from string import ascii_lowercase
+from decimal import *
+
+getcontext().prec = 20
 
 def perform_odr(model, parameter_count, x, y, xerr, yerr, override_start=[]):
     odr_model = odr.Model(model)
@@ -16,13 +19,13 @@ def perform_odr(model, parameter_count, x, y, xerr, yerr, override_start=[]):
 
     beta0 = []
 
-    if(len(override_start)<=0):
+    if(len(override_start)<=0):#TODO: fix so we can pass one array
         for i in range(parameter_count):
             beta0.append(1)
     else:
         beta0 = override_start
 
-    odr_regression = odr.ODR(odr_data, odr_model, beta0=beta0, maxit=1000000000)
+    odr_regression = odr.ODR(odr_data, odr_model, beta0=beta0, maxit=50)
     output = odr_regression.run()
     return output
 
@@ -86,8 +89,7 @@ class file_parser:
                     if(x_err_type == "percentage"):
                         xerr += uncert_lib.percent_uncert(float(plain_values[self.x_column]),self.x_err_setting[err_number])
                     if(x_err_type == "plain"):
-                        xerr += float(self.x_err_setting[column_count])
-                        column_count = column_count + 1
+                        xerr += float(self.x_err_setting[err_number])
                 self.x_err.append(xerr)
                 yerr = 0
                 for err_number, y_err_type in enumerate(self.y_err_types):#TODO: USE GET_ERROR?
@@ -100,11 +102,10 @@ class file_parser:
                     if(y_err_type == "percentage"):
                         yerr += uncert_lib.percent_uncert(float(plain_values[self.y_column]),self.y_err_setting[err_number])
                     if(y_err_type == "plain"):
-                        yerr += float(self.y_err_setting[column_count])
-                        column_count = column_count + 1
+                        yerr += float(self.y_err_setting[err_number])
                 self.y_err.append(yerr)
 
-    def redefine_x(self,filename,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns=[]):
+    def redefine_x(self,filename,column,formular,propagation,uncert_types=[],uncert_settings=[],uncert_settings_columns=[]):
         calc_values = []
         new_errs = []
         plain_values = []
@@ -116,16 +117,21 @@ class file_parser:
                 calc_values.append(plain_values[column])
                 new_errs.append(get_error(column,plain_values,uncert_types,uncert_settings,uncert_settings_columns))
         if(len(calc_values)==len(self.x_data)):
-            for i,x in enumerate(self.xdata):
+            for i,x in enumerate(self.x_data):
                 self.x_err[i] = propagation(x,float(calc_values[i]),self.x_err[i],new_errs[i])
                 self.x_data[i] = formular(x,float(calc_values[i]))
         elif(len(calc_values)==1):
-            for i,x in enumerate(self.xdata):
+            for i,x in enumerate(self.x_data):
                 self.x_data[i] = formular(x,float(calc_values[0]))
         else:
             raise ValueError("SIZE OF DATASET SHOULD BE: %n OR 1 BUT IS: %n" % (len(self.x_data),len(calc_values)))
 
-    def redefine_y(self,filename,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns=[]):
+    def shift_x(self,value):
+        for i,x in enumerate(self.x_data):
+            self.x_data[i] = x*value
+            self.x_err[i] = self.x_err[i]*value
+
+    def redefine_y(self,filename,column,formular,propagation,uncert_types=[],uncert_settings=[],uncert_settings_columns=[]):
         calc_values = []
         new_errs = []
         plain_values = []
@@ -146,6 +152,11 @@ class file_parser:
                 self.y_data[i] = formular(y,float(calc_values[0]))   
         else:
             raise ValueError("SIZE OF DATASET SHOULD BE: %n OR 1 BUT IS: %n" % (len(self.y_data),len(calc_values)))
+
+    def shift_y(self,value):
+        for i,y in enumerate(self.y_data):
+            self.y_data[i] = y*value
+            self.y_err[i] = self.y_err[i]*value
 
     def check_cohearance(self):
         if not (isinstance(self.file, str) and isinstance(self.x_column, int) and isinstance(self.y_column, int) and isinstance(self.x_settings_columns, list) and isinstance(self.y_settings_columns, list)
@@ -183,23 +194,95 @@ class file_parser:
 class ez_parser:
     def __init__(self):
         self.file_parsers = {}
+        self.fit_values = []
+        self.fit_uncerts = []
 
-    def describe(self):
+    def reduce(self, value, uncert):
+        if(uncert == 0):
+            if value == int(value):
+                value = int(value)
+            return[str(value),str(uncert)]
+        value = Decimal(str(value))
+        uncert = Decimal(str(uncert))
+        uncert_digits = int(np.ceil(-np.log10(uncert)))
+        prepared_uncert = uncert*Decimal(str(10**(uncert_digits)))
+        prepared_value = value*Decimal(str(10**(uncert_digits)))
+        additional = 1
+        if prepared_uncert < 4:
+            additional = 10
+        prepared_uncert = prepared_uncert*Decimal(str(additional))
+        prepared_value = prepared_value*Decimal(str(additional))
+        prepared_uncert = np.ceil(prepared_uncert)
+        prepared_value = round(prepared_value,0)
+        prepared_uncert = prepared_uncert/additional
+        prepared_value = prepared_value/additional
+
+        if prepared_uncert == int(prepared_uncert):
+            prepared_uncert = int(prepared_uncert)
+
+        if prepared_value == int(prepared_value):
+            prepared_value = int(prepared_value)
+
+        prepared_uncert = Decimal(str(prepared_uncert))*Decimal(str(10**(-uncert_digits)))
+        prepared_value = Decimal(str(prepared_value))*Decimal(str(10**(-uncert_digits)))
+        #strip zeroes    
+        value_is_int = False
+        if int(prepared_value) == prepared_value:
+            prepared_value = int(prepared_value)
+            value_is_int = True
+
+        uncert_is_int = False
+        if int(prepared_uncert) == prepared_uncert:
+            prepared_uncert = int(prepared_uncert)
+            uncert_is_int = True
+        #stringify
+        str_value = str('{:f}'.format(prepared_value))
+        str_uncert = str('{:f}'.format(prepared_uncert))
+        
+        if not uncert_is_int:
+            decimals_uncert = (len(str_uncert)-1) - str_uncert.find(".")
+            if decimals_uncert < uncert_digits:
+                str_uncert += "0"
+
+            decimals_value = 0
+            if not value_is_int:
+                decimals_value = (len(str_value)-1) - str_value.find(".")
+            if value_is_int and decimals_uncert > 0 or decimals_value < decimals_uncert:
+                if value_is_int:
+                    str_value += "."
+                for x in range(decimals_uncert - decimals_value):
+                    str_value += "0"
+        
+
+        #print(str(value) + " +/- " + str(uncert) + " -> " + str(str_value) + " +/- " + str(str_uncert))
+        return [str_value,str_uncert]
+
+    def describe(self, x_label="", y_label=""):
+        if(len(x_label)>0):
+            x_label = " " + x_label
         for file in self.file_parsers:
             output = ""
             print(file)
-            for i, x in enumerate(self.file_parsers[file].x_data):
-                output += "(" + str(self.file_parsers[file].x_data[i]) + " +/- "
-                output += str(self.file_parsers[file].x_err[i]) + ") - "
-                output += "(" + str(self.file_parsers[file].y_data[i]) + " +/- "
-                output += str(self.file_parsers[file].y_err[i]) + ")\n"
+            for i, e in enumerate(self.file_parsers[file].x_data):
+                x, xerr = self.reduce(self.file_parsers[file].x_data[i],self.file_parsers[file].x_err[i])
+                y, yerr = self.reduce(self.file_parsers[file].y_data[i],self.file_parsers[file].y_err[i])
+                output += "(" + x + " +/- "
+                output += xerr + ")" + x_label + " - "
+                output += "(" + y + " +/- "
+                output += yerr + ") " + y_label + "\n"
             print(output)
 
-    def redefine_x(self,filename,filename_redefine,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns=[]):
+    def redefine_x(self,filename,filename_redefine,column,formular,propagation,uncert_types=[],uncert_settings=[],uncert_settings_columns=[]):
         self.file_parsers[filename].redefine_x(filename_redefine,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns)
     
-    def redefine_y(self,filename,filename_redefine,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns=[]):
+    def shift_x(self,filename,value):
+        self.file_parsers[filename].shift_x(value)
+
+    def redefine_y(self,filename,filename_redefine,column,formular,propagation,uncert_types=[],uncert_settings=[],uncert_settings_columns=[]):
         self.file_parsers[filename].redefine_y(filename_redefine,column,formular,propagation,uncert_types,uncert_settings,uncert_settings_columns)
+
+    def shift_y(self,filename,value):
+        self.file_parsers[filename].shift_y(value)
 
     def setup_file(self, filename,x_column,y_column,x_settings_columns=[],y_settings_columns=[],x_err_types=[],y_err_types=[],x_err_setting=[],y_err_setting=[]):
         self.file_parsers[filename] = file_parser(filename,x_column,y_column,x_settings_columns,y_settings_columns,x_err_types,y_err_types,x_err_setting,y_err_setting)
@@ -277,7 +360,7 @@ class ez_parser:
         for parser_number, filename in enumerate(filenames):
             if filename in self.file_parsers:
                 x = self.file_parsers[filename].get_data()[0]
-                x_line = np.linspace(np.min(self.file_parsers[filename].get_data()[0]),np.max(self.file_parsers[filename].get_data()[0]),300)
+                x_line = np.linspace(np.min(self.file_parsers[filename].get_data()[0]),np.max(self.file_parsers[filename].get_data()[0]),1000)
                 y = self.file_parsers[filename].get_data()[1]
                 xerr = self.file_parsers[filename].get_uncert()[0]
                 yerr = self.file_parsers[filename].get_uncert()[1]
@@ -285,12 +368,15 @@ class ez_parser:
                                 xerr=xerr,yerr=yerr, label=legends_err[parser_number],
                                 marker='x', linestyle="none", markersize=2, markeredgewidth=0.5, capsize=3, linewidth=0.5, color=colors[parser_number])
                 regression = perform_odr(models[parser_number], parameter_counts[parser_number], x, y, xerr, yerr, override_start[parser_number])
-                plt.plot(x_line, models[parser_number](regression.beta,x_line), alpha=0.25, linewidth="1.5", label=legends_fit[parser_number],color=colors[parser_number])
+                plt.plot(x_line, models[parser_number](regression.beta,x_line), alpha=0.25, linewidth="1.5", label=legends_fit[parser_number],color=colors[parser_number])#TODO: COLORS OBLIGATORY
+                self.fit_values = regression.beta
+                self.fit_uncerts = regression.sd_beta
                 label = ""
                 for parameter_number, beta in enumerate(regression.beta):
-                    label += "\n$" + ascii_lowercase[parameter_number] + " \\ = \\ " + str(beta) + "$" 
-                    label += "\n$u_" + ascii_lowercase[parameter_number] + " \\ = \\ " + str(regression.sd_beta[parameter_number]) + "$" 
-                label += "\n$\\chi^2 \\ = \\ " + str(regression.res_var) + "$"
+                    x, xerr = self.reduce(beta,regression.sd_beta[parameter_number])
+                    label += "\n$" + ascii_lowercase[parameter_number] + " \\ = \\ " + x + "$" 
+                    label += "\n$u_" + ascii_lowercase[parameter_number] + " \\ = \\ " + xerr + "$" 
+                label += "\n$\\frac{\\chi^2}{dof} \\ = \\ " + str(regression.res_var) + "$"
                 plt.plot([], [], ' ', label=label)
             else:
                 raise ValueError("NO INITIALIZED PARSER FOR FILE: %s" % (filename))
