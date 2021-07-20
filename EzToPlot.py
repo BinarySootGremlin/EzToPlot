@@ -390,7 +390,7 @@ class ez_parser:
         if(show):
             plt.show()
 
-    def fit_plot(self, filenames, models, parameter_counts, colors=[], title="", x_label="", y_label="", legends_err=[], legends_fit=[], additional_legend="", override_start=[], param_names=[], show=True, debug=False):
+    def fit_plot(self, filenames, models, parameter_counts, colors=[], title="", x_label="", y_label="", legends_err=[], legends_fit=[], additional_legend="", override_start=[], param_names=[], x_lim=[], show=True, debug=False):
         if not isinstance(filenames, list):
             filenames = [filenames]
 
@@ -424,7 +424,13 @@ class ez_parser:
         for parser_number, filename in enumerate(filenames):
             if filename in self.file_parsers:
                 x = self.file_parsers[filename].get_data()[0]
-                x_line = np.linspace(np.min(self.file_parsers[filename].get_data()[0]),np.max(self.file_parsers[filename].get_data()[0]),1000)
+                x_limits = [np.min(self.file_parsers[filename].get_data()[0]),np.max(self.file_parsers[filename].get_data()[0])]
+                if len(x_lim)>2:
+                    raise ValueError("X LIM SIZE TOO BIG (SHOULD BE <=2)")
+                for count, val in enumerate(x_lim):
+                    x_limits[count] = val
+
+                x_line = np.linspace(x_limits[0],x_limits[1],1000)
                 y = self.file_parsers[filename].get_data()[1]
                 xerr = self.file_parsers[filename].get_uncert()[0]
                 yerr = self.file_parsers[filename].get_uncert()[1]
