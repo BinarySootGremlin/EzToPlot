@@ -1,6 +1,10 @@
 # EzToPlot
 Small Lib for plotting and fitting
 
+See "Examples" to get to know how the lib works but beware that these are not perfect solutions!
+
+If you find any names please let me know, I had to erase them for data safety reasons.
+
 Shield: [![CC BY-SA 4.0][cc-by-sa-shield]][cc-by-sa]
 
 This work is licensed under a
